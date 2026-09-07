@@ -1,187 +1,360 @@
 using Core;
-using Client.Properties;
-using static Core.GameUtil;
-using static Microsoft.VisualBasic.Interaction;
 
 namespace Client
 {
     public partial class Chess : Form
     {
-        private GameState Game { get; set; }
-        private Button[]? Squares { get; set; } = null;
-        private bool IsSelecting { get; set; }
-        private bool IsFirst { get; set; } = true;
-        private Position MovingFrom { get; set; }
-        private List<Position>? TPossibleMoves { get; set; }
+        private GameState Game { get; set; } = new();
+        private Button[] Squares { get; set; } = [];
+        private Position? SelectedSquare { get; set; }
+        private List<Position> LegalMoves { get; set; } = [];
         public Chess()
         {
             InitializeComponent();
         }
-        private static int GetTypeIndex(Type pieceType)
+        private void Chess_Load(object sender, EventArgs e)
         {
-            return pieceType switch
-            {
-                Type t when t == typeof(King) => 0,
-                Type t when t == typeof(Queen) => 1,
-                Type t when t == typeof(Rook) => 2,
-                Type t when t == typeof(Bishop) => 3,
-                Type t when t == typeof(Knight) => 4,
-                Type t when t == typeof(Pawn) => 5,
-                _ => -1,
-            };
-        }
+            Squares = new Button[64];
 
+            InitializeBoardButtons();
+            CustomBoardButton.Enabled = false; //temp disabled
+            ToggleLightButton_Click(new object(), new EventArgs());
+            NewGame();
+        }
+        private void InitializeBoardButtons()
+        {
+            for (int i = 0; i < Squares.Length; i++)
+            {
+                Squares[i] = CreateSquareButton(i);
+            }
+        }
+        private Button CreateSquareButton(int i)
+        {
+            Button button = Controls.Find($"Sq{i}", true).OfType<Button>().Single();
+
+            button.Tag = i;
+            button.Click += Sq_Click;
+            button.FlatStyle = FlatStyle.Flat;
+            button.FlatAppearance.BorderSize = 0;
+            return button;
+        }
         private void Sq_Click(object sender, EventArgs e)
         {
-            if (sender is not Button clickedButton) return;
-            int squareIndex = int.Parse(clickedButton.Name[2..]);
-            (int x, int y) coordinates = ITC(squareIndex);
-            int x = coordinates.x, y = coordinates.y;
-            if (IsSelecting)
+            if (sender is not Button)
+                return;
+
+            var button = (Button)sender;
+
+            if (button.Tag is not int)
+                return;
+
+            int index = (int)button.Tag;
+
+            if (IsGameOver())
+                return;
+
+            var clicked = new Position(GameUtil.ITC(index).Item1, GameUtil.ITC(index).Item2);
+
+            if (SelectedSquare == null || CanSelectPiece(clicked))
             {
-                PossibleMoves.Text = string.Empty;
+                Select(clicked);
+                return;
+            }
 
-                string? pieceChar = Game.Board.Board[squareIndex].Piece?.GetType().Name;
+            if (SelectedSquare.Value.Equals(clicked))
+            {
+                Unselect();
+                return;
+            }
 
-                PossibleMoves.Text += $"Possible moves for {Environment.NewLine}{pieceChar}: {new Position(x, y)}:{Environment.NewLine}{Environment.NewLine}";
-                if (Game.Board.Board[squareIndex].Piece != null)
+            TryMove(clicked);
+        }
+
+        private bool CanSelectPiece(Position position)
+        {
+            Piece? piece = Game.Board.GetSquare(position).Piece;
+
+            return piece != null && piece.ColorId == Game.SideToMove;
+        }
+
+        private void Select(Position pos)
+        {
+            if (!CanSelectPiece(pos))
+                return;
+
+            SelectedSquare = pos;
+            LegalMoves = GetLegalMoves(pos);
+
+            RefreshSelection();
+            RefreshPossibleMoves();
+        }
+
+        private void Unselect()
+        {
+            SelectedSquare = null;
+            LegalMoves.Clear();
+
+            RefreshSelection();
+            RefreshPossibleMoves();
+        }
+
+        private void TryMove(Position to)
+        {
+            if (SelectedSquare == null)
+                return;
+
+            Position from = SelectedSquare.Value;
+
+            // Read the piece BEFORE moving it, because the source
+            // square will be empty after a successful move.
+            Piece? piece = Game.Board.GetSquare(from).Piece;
+
+            if (piece == null)
+            {
+                Unselect();
+                return;
+            }
+            if (!Game.TryMove(new(from, to)))
+            {
+                AppendLog("illegal move");
+                return;
+            }
+
+            string color = piece.ColorId == 0 ? "white" : "black";
+
+            AppendLog($"{color}: {ToChessNotation(from)} > {ToChessNotation(to)}");
+
+            RefreshAll();
+        }
+        private void RefreshAll()
+        {
+            Unselect();
+            RefreshBoard();
+            RefreshGameStatus();
+            RefreshPossibleMoves();
+        }
+        private List<Position> GetLegalMoves(Position from)
+        {
+            if (!Position.IsValid(from))
+                return [];
+
+            Square sq = Game.Board.GetSquare(from);
+            Piece? p = sq.Piece;
+
+            if (p == null || p.ColorId != Game.SideToMove)
+                return [];
+
+
+            List<Position> ms =
+                GameUtil.FindMoves(Game.Board, sq)
+                .Where(to => GameUtil.IsLegalMove(Game.Board, new Move(from, to)))
+                .ToList();
+
+
+            return ms;
+        }
+        private bool HasLegalMoves()
+        {
+            return Game.Board.Board
+                .Where(sq => sq.Piece != null &&
+                             sq.Piece.ColorId == Game.SideToMove)
+                .Any(sq => GetLegalMoves(sq.Position).Count > 0);
+        }
+        private bool IsGameOver()
+        {
+            return Game.Result != GameResult.Ongoing ||
+                   !HasLegalMoves();
+        }
+        private void RefreshBoard()
+        {
+            for (int i = 0; i < Squares.Length; i++)
+            {
+                var sq = Game.Board.Board[i];
+                var p = sq.Piece;
+
+                if (p == null)
+                    DisplayNull(i, sq);
+                else
+                    DisplayPiece(i, sq, p);
+            }
+
+            RefreshSelection();
+        }
+
+        private void DisplayPiece(int i, Square sq, Piece p)
+        {
+            string name = $"_{p.Id}{p.ColorId}{sq.Color}";
+            Squares[i].Image = Properties.Resources.ResourceManager.GetObject(name) as Bitmap;
+        }
+
+        private void DisplayNull(int i, Square sq)
+        {
+            if (sq.Color == 0)
+            {
+                Squares[i].Image = Properties.Resources.WhiteEmpty;
+                return;
+            }
+            Squares[i].Image = Properties.Resources.BlackEmpty;
+        }
+
+        private void RefreshSelection()
+        {
+            for (int i = 0; i < Squares.Length; i++)
+            {
+                Button button = Squares[i];
+                (int x, int y) = GameUtil.ITC(i);
+                Position position = new(x, y);
+
+                button.FlatAppearance.BorderSize = 0;
+
+                if (SelectedSquare != null &&
+                    SelectedSquare.Value.Equals(position))
                 {
-                    TPossibleMoves = FindMoves(Game.Board, Game.Board.Board[squareIndex]);
-                    foreach (Position move in TPossibleMoves)
-                    {
-                        PossibleMoves.AppendText(move.ToString() + Environment.NewLine);
-                    }
-                    IsSelecting = false;
-                    MovingFrom = new(x, y);
+                    button.FlatAppearance.BorderColor = Color.Goldenrod;
+                    button.FlatAppearance.BorderSize = 3;
+                }
+                else if (LegalMoves.Contains(position))
+                {
+                    button.FlatAppearance.BorderColor = Color.SteelBlue;
+                    button.FlatAppearance.BorderSize = 2;
                 }
             }
-            else
-            { 
-                Position movingTo = new(x, y);
-                bool succeeded = TryMove(Game.Board, MovingFrom, movingTo, false);
-                Piece? piece = Game.Board.GetSquare(MovingFrom).Piece;
+        }
 
-                if (piece == null)
-                    return;
+        private void RefreshPossibleMoves()
+        {
+            PossibleMoves.Clear();
 
-                string colorString = piece.ColorId == 0 ? "White" : "Black"; 
-                if (!succeeded)
+            if (SelectedSquare == null)
+            {
+                return;
+            }
+
+            Position from = SelectedSquare.Value;
+            Piece? p = Game.Board.GetSquare(from).Piece;
+
+            PossibleMoves.Text =
+                $"{p?.GetType().Name} on {ToChessNotation(from)}" +
+                Environment.NewLine + Environment.NewLine + $"possible moves:" + Environment.NewLine;
+
+            foreach (Position move in LegalMoves)
+            {
+                PossibleMoves.AppendText(ToChessNotation(move) + Environment.NewLine);
+            }
+        }
+
+        private void RefreshGameStatus()
+        {
+            string status;
+
+            if (Game.Result != GameResult.Ongoing)
+            {
+                status = Game.Result switch
                 {
-                    Log.AppendText(Environment.NewLine + "Could not move, try again");
-                    //throw new Exception();
+                    GameResult.WhiteWon => "white wins",
+                    GameResult.BlackWon => "black wins",
+                    GameResult.Draw => "draw",
+                    _ => "game over"
+                };
+            }
+            else
+            {
+                int side = Game.SideToMove;
+                string player = side == 0 ? "white" : "black";
+                bool isInCheck = GameUtil.IsInCheck(side, Game.Board);
+
+                if (!HasLegalMoves())
+                {
+                    status = isInCheck
+                        ? $"checkmate {OpponentName(side)} wins"
+                        : "stalemate draw";
                 }
                 else
                 {
-                    TryMove(Game.Board, MovingFrom, movingTo);
-                    Log.AppendText($"{Environment.NewLine}{colorString} {MovingFrom} to {new Position(x, y)}");
-                    RefreshBoard();
+                    status = isInCheck
+                        ? $"{player} to move in check!"
+                        : $"{player} to move";
                 }
-                IsSelecting = true;
             }
 
+            label1.Text = status;
+            Text = $"modest-chess — {status}";
         }
 
-        private void RefreshBoard()
+        private string OpponentName(int colorId)
         {
-            if (Squares != null)
-            {
-                for (int i = 0; i < Squares.Length; i++)
-                {
-                    Square? tSquare = Game.Board.Board[i];
-                    if (tSquare.Piece != null)
-                    {
-                        int pieceTypeIndex = GetTypeIndex(tSquare.Piece.GetType());
-                        string resourceName = string.Format("_{0}{1}{2}", pieceTypeIndex, tSquare.Piece.ColorId, tSquare.Color);
-                        Squares[i].Image = Resources.ResourceManager.GetObject(resourceName) as Bitmap;
-                    }
-                    else if (tSquare.Color == 0)
-                    {
-                        Squares[i].Image = Resources.WhiteEmpty;
-                    }
-                    else if (tSquare.Color == 1)
-                    {
-                        Squares[i].Image = Resources.BlackEmpty;
-                    }
-                }
-            }
-            string[] players = ["White", "Black"];
-
-            for (int player = 0; player <= 1; player++)
-            {
-                if (GameUtil.IsInCheckmate(player, Game.Board))
-                {
-                    MessageBox.Show($"{players[player]} in checkmate");
-                }
-                else if (GameUtil.IsInStalemate(player, Game.Board))
-                {
-                    MessageBox.Show($"{players[player]} in stalemate");
-                }
-                else if (GameUtil.IsInCheck(player, Game.Board))
-                {
-                    MessageBox.Show($"{players[player]} in check");
-                }
-                else if (GameUtil.IsDraw(Game.Board))
-                {
-                    MessageBox.Show($"Draw");
-                }
-
-            }
+            return colorId == 0 ? "black" : "white";
         }
-
-        private void ToggleLightButton_Click(object sender, EventArgs e)
+        private void NewGame()
         {
-            Label[] allIndexLabels =
-                [I1Label, I2Label, I3Label, I4Label, I5Label, I6Label, I7Label, I8Label,
-                IALabel, IBLabel, ICLabel, IDLabel, IELabel, IFLabel, IGLabel, IHLabel];
+            Game = new GameState();
 
-            if (BackColor == Color.DarkSlateGray)
-            {
-                BackColor = Color.LightSeaGreen;
-                PossibleMoves.BackColor = Color.LightSeaGreen;
-                PossibleMoves.ForeColor = Color.Black;
-                Log.BackColor = Color.LightSeaGreen;
-                Log.ForeColor = Color.Black;
-                foreach (var label in allIndexLabels)
-                {
-                    label.ForeColor = Color.Black;
-                }
-            }
-            else
-            {
-                BackColor = Color.DarkSlateGray;
-                PossibleMoves.BackColor = Color.DarkSlateGray;
-                PossibleMoves.ForeColor = Color.White;
-                Log.BackColor = Color.DarkSlateGray;
-                Log.ForeColor = Color.White;
-                foreach (var label in allIndexLabels)
-                {
-                    label.ForeColor = Color.White;
-                }
-            }
+            SelectedSquare = null;
+            LegalMoves.Clear();
+
+            RefreshLogs();
+            RefreshBoard();
+            RefreshGameStatus();
         }
 
         private void NewGameButton_Click(object sender, EventArgs e)
         {
-
-            Game = new();
-            IsSelecting = true;
-            TPossibleMoves = [];
-
-            Squares = Enumerable.Range(0, 64).Select(selector: i => Controls[$"Sq{i}"] as Button).ToArray();
-            if (IsFirst)
-            {
-                Array.ForEach(Squares, s => s.Click += Sq_Click);
-                IsFirst = false;
-            }
-            RefreshBoard();
-            RefreshLogs();
+            NewGame();
         }
+
         private void RefreshLogs()
         {
             Log.Clear();
-            Log.Text += "Logs:";
+            Log.Text = "logs:";
+
             PossibleMoves.Clear();
-            PossibleMoves.Text += "Possible moves for:";
+        }
+
+        private void AppendLog(string message)
+        {
+            Log.AppendText(Environment.NewLine + message);
+        }
+
+        private void CustomBoardButton_Click(object sender, EventArgs e)
+        {
+
+        }
+        private string ToChessNotation(Position position)
+        {
+            char file = (char)('a' + position.Y - 1);
+            return $"{file}{position.X}";
+        }
+
+        private void ToggleLightButton_Click(object sender, EventArgs e)
+        {
+            bool useLight = BackColor == Color.DarkSlateGray;
+
+            Color background = useLight
+                ? Color.LightSeaGreen
+                : Color.DarkSlateGray;
+
+            Color foreground = useLight
+                ? Color.Black
+                : Color.White;
+
+            BackColor = background;
+
+            PossibleMoves.BackColor = background;
+            PossibleMoves.ForeColor = foreground;
+
+            Log.BackColor = background;
+            Log.ForeColor = foreground;
+
+            Label[] labels =
+            [
+                I1Label, I2Label, I3Label, I4Label,
+                I5Label, I6Label, I7Label, I8Label,
+                IALabel, IBLabel, ICLabel, IDLabel,
+                IELabel, IFLabel, IGLabel, IHLabel
+            ];
+
+            foreach (Label label in labels)
+                label.ForeColor = foreground;
         }
 
         private void ExitButton_Click(object sender, EventArgs e)
@@ -189,32 +362,5 @@ namespace Client
             Close();
         }
 
-        private void Chess_Load(object sender, EventArgs e)
-        {
-            NewGameButton_Click(sender, e);
-        }
-
-        private void CustomBoardButton_Click(object sender, EventArgs e)
-        {
-            //try
-            {
-                string boardInput = InputBox("Enter the board string prompt (no exception handling):\nRULES:\n" +
-                "K, Q, R, B, N, P, for all pieces respectfully\n" +
-                "0 for white and 1 for black\n" +
-                "to input a square, first put the piece char, and then piece color id.\ndivide each piece with '/'.\nif square is empty, enter a number of the consecutive empty squares\n" +
-                "example for a white queen then 5 empty squares then a black bishop: Q0/05/B1\nensure the board contains a king from each side.",
-                "Custom board creation");
-                if (boardInput != null || boardInput == string.Empty)
-                {
-                     Game = new();
-                     RefreshBoard();
-                }                
-            }
-            //catch
-            //{
-            //    MessageBox.Show("i lied, there is exception handling. just not a good one. try again");
-            //}
-        }
     }
 }
-

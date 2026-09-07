@@ -864,13 +864,16 @@
             // 
             // label1
             // 
-            label1.AutoSize = true;
-            label1.ForeColor = Color.IndianRed;
-            label1.Location = new Point(207, 76);
+            label1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            label1.Font = new Font("Segoe UI", 34F);
+            label1.ForeColor = Color.White;
+            label1.Location = new Point(-7, 922);
+            label1.MaximumSize = new Size(10000000, 10000000);
             label1.Name = "label1";
-            label1.Size = new Size(38, 15);
+            label1.Size = new Size(1526, 73);
             label1.TabIndex = 85;
-            label1.Text = "label1";
+            label1.Text = "game state\r\n";
+            label1.TextAlign = ContentAlignment.MiddleCenter;
             // 
             // CustomBoardButton
             // 

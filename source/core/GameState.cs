@@ -1,4 +1,6 @@
-﻿namespace Core
+﻿using static Core.GameUtil;
+
+namespace Core
 {
     public class GameState
     {
@@ -22,7 +24,7 @@
             if (piece.ColorId != SideToMove)
                 return false;
 
-            if (!IsLegalMove(m))
+            if (!IsLegalMove(Board, m))
                 return false;
 
             ApplyMove(m, Board);
