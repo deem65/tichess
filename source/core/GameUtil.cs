@@ -7,12 +7,6 @@ namespace Core
     /// </summary>
     public static class GameUtil
     {
-        public static readonly Dictionary<int, int> pawnlessMoves = new()
-        {
-            { 0, 0 }, // for white pieces
-            { 1, 0 }  // for black pieces
-        };
-
         //Add these values to X and Y to move: Up, Down, Right, Left, UpRight, UpLeft, DownRight, DownLeft, and all 8 knight moves...
         public static readonly int[,] moveSet = {
                 { 1, 0 }, { -1, 0 }, { 0, 1 },
@@ -27,9 +21,9 @@ namespace Core
         }*/
         public static bool IsInCheckmate(int colorId, BoardModel testModel)
         {
-            return IsInStalemate(colorId, testModel) && IsInCheck(colorId, testModel);
+            return HasNoLegalMoves(colorId, testModel) && IsInCheck(colorId, testModel);
         }
-        public static bool IsInStalemate(int colorId, BoardModel testModel)
+        public static bool HasNoLegalMoves(int colorId, BoardModel testModel)
         {
             return testModel.Board
                 .Where(sq => sq.Piece != null && sq.Piece.ColorId == colorId)
@@ -45,7 +39,7 @@ namespace Core
 
             List<Position> opponentPossibleMoves = testModel.Board
                 .Where(sq => sq.Piece != null && sq.Piece.ColorId != colorId)
-                .SelectMany(sq => FindMoves(testModel, sq)).ToList();
+                .SelectMany(sq => FindAttacks(testModel, sq)).ToList();
 
             return opponentPossibleMoves.Contains(kingLocation);
         }
@@ -54,6 +48,9 @@ namespace Core
             Piece? p = b.GetSquare(m.From).Piece;
 
             if (p == null)
+                return false;
+
+            if (b.GetSquare(m.To).Piece is King)
                 return false;
 
             if (!FindMoves(b, b.GetSquare(m.From)).Contains(m.To))
@@ -86,74 +83,123 @@ namespace Core
             return new Position(current.X, current.Y + 1);
 
         }
-        public static List<Position> FindMoves(BoardModel board, Square square)
+        public static List<Position> FindAttacks(BoardModel board, Square square)
         {
-            var piece = square.Piece;
+            Piece? piece = square.Piece;
+
             if (piece == null)
                 return [];
 
-            List<Position> results = [];
-            List<int> moves = [];
+            if (piece is Pawn)
+                return FindPawnAttacks(square.Position, piece.ColorId);
 
-            if (square.Piece == null) 
+            return FindSquares(board, square, piece, true);
+        }
+
+        public static List<Position> FindMoves(BoardModel board, Square square)
+        {
+            Piece? piece = square.Piece;
+
+            if (piece == null)
                 return [];
 
-            int startMoveSetIndex = square.Piece.StartIndex;
-            int endMoveSetIndex = square.Piece.EndIndex;
+            if (piece is Pawn)
+                return FindPawnMoves(board, square, piece);
 
-            if (piece.GetType() == typeof(Pawn))
+            return FindSquares(board, square, piece, false);
+        }
+        private static List<Position> FindSquares(BoardModel board, Square square, Piece piece, bool includeFriendly)
+        {
+            List<Position> results = [];
+
+            for (int direction = piece.StartIndex; direction < piece.EndIndex; direction++)
             {
-                bool isPawnWhite = piece.ColorId == 0;
+                Position current = square.Position;
+                int reach = piece.FindReach(current, piece.ColorId);
 
-                int t = isPawnWhite ? 8 : -8;
-
-                if (board.Board[CTI(square.Position.X, square.Position.Y) + t - 1].Piece != null)
-                {
-                    moves.Add(isPawnWhite ? 5 : 7);
-                }
-                if (board.Board[CTI(square.Position.X, square.Position.Y) + t + 1].Piece != null)
-                {
-                    moves.Add(isPawnWhite ? 4 : 6);
-                }
+                AddReachableSquares(board, piece, includeFriendly, results, direction, current, reach);
             }
 
-            for (int i = 0; i < endMoveSetIndex - startMoveSetIndex; i++)
-            {
-                moves.Add(startMoveSetIndex + i);
-            }
-
-            foreach (int move in moves)
-            {
-                var currentPosition = square.Position;
-                int pieceReach = piece.FindReach(currentPosition, piece.ColorId);
-                for (int i = 0; i < pieceReach; i++)
-                {
-                    int newX = currentPosition.X + moveSet[move, 0],
-                        newY = currentPosition.Y + moveSet[move, 1];
-
-                    currentPosition = new Position(newX, newY);
-                    if (!Position.IsValid(currentPosition))
-                    {
-                        break;
-                    }
-                    int moveToIndex = CTI(currentPosition.X, currentPosition.Y);
-
-                    Piece? currectPositionPiece = board.Board[moveToIndex].Piece;
-                    if (currectPositionPiece != null && currectPositionPiece.ColorId == piece.ColorId)
-                    {
-                        break;
-                    }
-
-                    if (!(currectPositionPiece != null && piece.GetType() == typeof(Pawn) && move < 2))
-                        results.Add(currentPosition);
-
-                    if (currectPositionPiece != null)
-                    {
-                        break;
-                    }
-                }
-            }
             return results;
+        }
+
+        private static void AddReachableSquares(BoardModel board,Piece piece, bool includeFriendly,List<Position> results, int direction, Position current, int reach)
+        {
+            for (int i = 0; i < reach; i++)
+            {
+                current = new Position(
+                    current.X + moveSet[direction, 0],
+                    current.Y + moveSet[direction, 1]
+                );
+
+                if (!Position.IsValid(current))
+                    break;
+
+                Piece? target = board.GetSquare(current).Piece;
+                if (target is not King || includeFriendly)
+                {
+                    if (target == null || includeFriendly || target.ColorId != piece.ColorId)
+                        results.Add(current);
+                }
+
+                if (target != null)
+                    break;
+            }
+        }
+
+        private static List<Position> FindPawnAttacks(Position from, int colorId)
+        {
+            List<Position> attacks = [];
+            int direction = colorId == 0 ? 1 : -1;
+
+            for (int offset = -1; offset <= 1; offset += 2)
+            {
+                Position attack = new(
+                    from.X + direction,
+                    from.Y + offset
+                );
+
+                if (Position.IsValid(attack))
+                    attacks.Add(attack);
+            }
+
+            return attacks;
+        }
+        private static List<Position> FindPawnMoves(BoardModel board, Square square, Piece pawn)
+        {
+            List<Position> moves = [];
+
+            int direction = pawn.ColorId == 0 ? 1 : -1;
+            int startingRank = pawn.ColorId == 0 ? 2 : 7;
+            int reach = square.Position.X == startingRank ? 2 : 1;
+
+            for (int i = 1; i <= reach; i++)
+            {
+                Position next = new(
+                    square.Position.X + direction * i,
+                    square.Position.Y
+                );
+
+                if (!Position.IsValid(next))
+                    break;
+
+                if (board.GetSquare(next).Piece != null)
+                    break;
+
+                moves.Add(next);
+            }
+
+            foreach (Position attack in FindPawnAttacks(square.Position, pawn.ColorId))
+            {
+                Piece? target = board.GetSquare(attack).Piece;
+
+                if (target != null && target.ColorId != pawn.ColorId && target is not King)
+                {
+                    moves.Add(attack);
+                }
+            }
+
+            return moves;
         }
         public static List<List<Piece>> GetDrawableCombinations()
         {
