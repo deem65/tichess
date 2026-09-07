@@ -19,27 +19,27 @@ namespace Core
         {
             //WIP          
         }*/
-        public static bool IsInCheckmate(int colorId, BoardModel testModel)
+        public static bool IsInCheckmate(int colorId, BoardModel b)
         {
-            return HasNoLegalMoves(colorId, testModel) && IsInCheck(colorId, testModel);
+            return NoLegalMoves(colorId, b) && IsInCheck(colorId, b);
         }
-        public static bool HasNoLegalMoves(int colorId, BoardModel testModel)
+        public static bool NoLegalMoves(int colorId, BoardModel b)
         {
-            return testModel.Board
+            return b.Board
                 .Where(sq => sq.Piece != null && sq.Piece.ColorId == colorId)
-                .All(sq => !FindMoves(testModel, sq)
-                .Any(m => IsLegalMove(testModel, new Move(sq.Position, m))));
+                .All(sq => !FindMoves(b, sq)
+                .Any(m => IsLegalMove(b, new Move(sq.Position, m))));
         }
-        public static bool IsInCheck(int colorId, BoardModel testModel) //bug- findmoves returns movement squares not attackable squares, problem is pawns. 
+        public static bool IsInCheck(int colorId, BoardModel b) 
         {
-            Position kingLocation = testModel.Board
+            Position kingLocation = b.Board
                 .Where(sq => sq.Piece != null && sq.Piece.ColorId == colorId && sq.Piece.GetType() == typeof(King))
                 .Select(sq => sq.Position)
                 .FirstOrDefault();
 
-            List<Position> opponentPossibleMoves = testModel.Board
+            List<Position> opponentPossibleMoves = b.Board
                 .Where(sq => sq.Piece != null && sq.Piece.ColorId != colorId)
-                .SelectMany(sq => FindAttacks(testModel, sq)).ToList();
+                .SelectMany(sq => FindAttacks(b, sq)).ToList();
 
             return opponentPossibleMoves.Contains(kingLocation);
         }
@@ -57,7 +57,6 @@ namespace Core
                 return false;
 
             BoardModel boardCopy = DeepCopy(b);
-
             ApplyMove(m, boardCopy);
 
             return !IsInCheck(p.ColorId, boardCopy);
