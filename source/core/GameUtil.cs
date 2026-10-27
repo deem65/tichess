@@ -1,4 +1,6 @@
-﻿namespace Core
+﻿using System.Xml;
+
+namespace Core
 {
     /// <summary>
     /// static class which has all methods to work with a board, it can check for checkmate, stalemate, checks, draws, move pieces, check is move is valid, find possible moves, and more.
@@ -41,7 +43,7 @@
 
             return opponentPossibleMoves.Contains(kingLocation);
         }
-        public static bool IsLegalMove(BoardModel b, Move m)
+        public static bool IsLegalMove(GameState s, BoardModel b, Move m)
         {
             Piece? p = b.GetSquare(m.From).Piece;
 
@@ -50,6 +52,24 @@
 
             if (b.GetSquare(m.To).Piece is King)
                 return false;
+
+            if (p is King && (Math.Abs(m.To.X - m.From.X) == 2))
+            {
+                int row = s.SideToMove == 0 ? 1 : 7;
+
+                bool canCastle;
+
+                if (s.SideToMove == 0)
+                    canCastle = !s.HasWhiteRookMoved && !s.HasWhiteKingMoved;
+                else
+                    canCastle = !s.HasBlackRookMoved && !s.HasBlackKingMoved;
+
+                if (canCastle && b.Board[5 * row].Piece is null && b.Board[6 * row].Piece is null)
+                {
+                    // now check if king in check and if it passes through check
+                }
+
+            } 
 
             if (!FindMoves(b, b.GetSquare(m.From)).Contains(m.To))
                 return false;

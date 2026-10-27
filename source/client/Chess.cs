@@ -104,9 +104,6 @@ namespace Client
                 return;
 
             Position from = SelectedSquare.Value;
-
-            // Read the piece BEFORE moving it, because the source
-            // square will be empty after a successful move.
             Piece? piece = Game.Board.GetSquare(from).Piece;
 
             if (piece == null)
