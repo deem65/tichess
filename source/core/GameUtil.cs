@@ -66,7 +66,7 @@ namespace Core
 
                 if (canCastle && b.Board[5 * row].Piece is null && b.Board[6 * row].Piece is null)
                 {
-                    // now check if king in check and if it passes through check
+                    
                 }
 
             } 
